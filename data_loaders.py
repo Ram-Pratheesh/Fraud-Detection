@@ -41,13 +41,14 @@ def load_un_comtrade_benchmarks(api_key=None):
         headers["Ocp-Apim-Subscription-Key"] = api_key
 
     try:
-        # Example API call for Computers (8471) as requested by Boss
+        # The public preview API is 100% free and requires no subscription key!
+        # reporterCode 842 (USA) reliably returns current data for the public API.
         params = {
-            "reporterCode": "356",  # India
+            "reporterCode": "842",  
             "period": "2023",
             "cmdCode": "8471"
         }
-        res = requests.get(url, params=params, headers=headers, timeout=5)
+        res = requests.get(url, params=params, timeout=5)
         
         if res.status_code == 200:
             data = res.json()

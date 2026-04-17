@@ -26,7 +26,7 @@ def scrape_msme_tn():
         timeout=30
     )
 
-    soup = BeautifulSoup(r2.text, "html.parser")
+    soup = BeautifulSoup(r2.text, "lxml")
     tables = soup.find_all("table")
 
     all_rows = []
@@ -41,7 +41,7 @@ def scrape_msme_tn():
 
     df = pd.DataFrame(all_rows)
     df.to_csv("real_msme_seed.csv", index=False)
-    print(f"Scraped {len(df)} MSME entities -> real_msme_seed.csv")
+    print(f"Scraped {len(df)} MSME entities → real_msme_seed.csv")
     return df
 
 if __name__ == "__main__":
