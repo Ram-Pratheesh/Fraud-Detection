@@ -61,13 +61,3 @@ This project is a multi-layered, hybrid Fraud Detection System. It doesn't rely 
 
 ---
 
-## 🎯 Quick Expected Q&A
-
-**Q: "Why did you use XGBoost instead of a Deep learning approach like Neural Networks?"**
-> **A:** For tabular, financial transaction data featuring mixed categorical and continuous variables, tree-based models like XGBoost vastly outperform Deep Learning. Furthermore, XGBoost provides feature importance rankings out-of-the-box, giving us perfect *explainability* which is a legal requirement in financial sector compliance.
-
-**Q: "How are you handling the fact that 95%+ of transactions are perfectly legal?"**
-> **A:** Fraud is a classic highly-imbalanced class problem. We solve this mathematically using `scale_pos_weight` inside XGBoost to heavily penalize False Negatives, combined with a lowered threshold tuning mechanism geared toward high Recall.
-
-**Q: "What if the ML model hallucinates or makes a mistake?"**
-> **A:** That is exactly why we use a Hybrid design. The ML probabilities are averaged securely alongside our deterministic, hard-coded Rule Engine (`Final_Score = 0.7 * ML + 0.3 * Rule`). The rule engine acts as an anchor ensuring human-led logic always influences the output.
