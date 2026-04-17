@@ -1,8 +1,31 @@
-# Fraud Detection Pipeline: Technical Blueprint
+how to run
 
-This document explains every single file in the codebase, the rationale behind the techniques used, and how data moves through the project. It is specifically written to help you prepare for rapid-fire technical questions from leadership. 
+# 1. Clone
+git clone https://github.com/Ram-Pratheesh/Fraud-Detection.git
+cd Fraud-Detection
 
-Read through this carefully.
+# 2. Install dependencies (no requirements.txt, so install manually)
+python -m pip install -r requirements.txt
+
+# 3. (Optional) Scrape real MSME seed data
+python scrape_msme.py
+
+# 4. Generate synthetic transactions
+python generate_data.py
+# → creates output/transactions_flagged.csv
+
+# 5. Engineer features
+python feature_engineering.py
+# → creates output/features.csv
+
+# 6. Train the model
+python train_model.py
+# → saves models/fraud_model.pkl, models/feature_list.pkl, models/threshold.pkl
+
+# 7. Run predictions on new data
+python predict.py --input output/transactions_flagged.csv
+# → creates output/predictions.csv and output/high_risk_transactions.csv
+
 
 ## 📂 Project Architecture Overview
 
