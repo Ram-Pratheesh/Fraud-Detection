@@ -17,7 +17,7 @@ except ImportError:
 
 
 # Maximum possible baseline score (used to normalize risk between 0 and 1 without extreme deflation)
-MAX_BASELINE_SCORE = 150.0
+MAX_BASELINE_SCORE = 145.0
 
 RULE_METADATA = {
     # ── Category 1: Invoice / Price Rules ──
@@ -36,7 +36,7 @@ RULE_METADATA = {
         'explanation': 'Declared value is unusually high, often linked to capital flight.'
     },
     'round_invoice': {
-        'weight': 5,
+        'weight': 2,
         'category': 'price_flags',
         'source': 'Behavioral Analysis',
         'confidence': 'low',
@@ -219,7 +219,7 @@ RULE_METADATA = {
         'explanation': 'Suspicious shipment timing directly preceding GST refund windows.'
     },
     'late_night_filing': {
-        'weight': 10,
+        'weight': 2,
         'category': 'behavior_flags',
         'source': 'Behavioral Analysis',
         'confidence': 'low',
@@ -273,8 +273,10 @@ class TradeFraudRuleEngine:
         raw_flags.update(self._entity_rules(transaction))
         raw_flags.update(self._velocity_rules(transaction))
         
-        # Meta rule: Intent inferred if 3 or more flags trigger
-        if sum(raw_flags.values()) >= 3:
+        # Meta rule: Intent inferred if 3 or more HIGH CONFIDENCE flags trigger
+        high_conf_flags = [f for f, triggered in raw_flags.items() 
+                           if triggered and RULE_METADATA.get(f, {}).get('confidence') == 'high']
+        if len(high_conf_flags) >= 3:
             raw_flags['intent_inferred_multiple_discrepancies'] = True
 
         # Extract only the active triggered flags
@@ -308,11 +310,22 @@ class TradeFraudRuleEngine:
             grouped_flags[meta['category']].append(flag)
             explanations.append(meta['explanation'])
 
-        # Normalize Risk Score (bounded realistically logic, not arbitrarily 1.0)
-        score = total_score / MAX_BASELINE_SCORE
+        # Normalize Risk Score
+        max_possible_weight = MAX_BASELINE_SCORE 
+        score = total_score / max_possible_weight
         score = min(score, 1.0)
         
         risk_level = 'HIGH' if score >= 0.70 else ('MEDIUM' if score >= 0.35 else 'LOW')
+        
+        # False Positive Downgrade Logic
+        if risk_level == "MEDIUM":
+            has_high_conf = any(RULE_METADATA.get(f, {}).get('confidence') == 'high' for f in triggered_flag_names)
+            if not has_high_conf:
+                risk_level = "LOW"
+                
+        # Cap low-value noise
+        if triggered_flag_names and all(RULE_METADATA.get(f, {}).get('confidence') == 'low' for f in triggered_flag_names):
+            risk_level = "LOW"
         
         # Summary Generator strictly bound to risk_level
         if risk_level == "LOW":
@@ -320,9 +333,18 @@ class TradeFraudRuleEngine:
         elif risk_level == "MEDIUM":
             summary = "This transaction shows moderate risk indicators and may require further review."
         elif risk_level == "HIGH":
-            # Taking the first 3 explanations, making them lower-case for sentence flow (optional)
-            top_explanations = [exp.split(",")[0].lower() for exp in explanations[:3]] if explanations else ["cumulative irregularities"]
-            summary = "This transaction is HIGH RISK due to multiple red flags including: " + ", and ".join(top_explanations) + "."
+            # Taking the first 3 HIGH/MEDIUM explanations and gracefully ignoring weak signals
+            filtered_explanations = [
+                meta['explanation'].split(",")[0].lower() 
+                for meta in (RULE_METADATA.get(f) for f in triggered_flag_names) 
+                if meta and meta.get('confidence') in ['high', 'medium']
+            ]
+            if not filtered_explanations:
+                # Fallback if somehow there are no high/medium explanations
+                filtered_explanations = [exp.split(",")[0].lower() for exp in explanations]
+
+            top_explanations = filtered_explanations[:3] if filtered_explanations else ["cumulative irregularities"]
+            summary = f"This transaction is {risk_level} RISK due to critical indicators such as " + ", and ".join(top_explanations) + "."
         else:
             summary = "Status unknown."
 
@@ -352,7 +374,8 @@ class TradeFraudRuleEngine:
 
         return {
             'under_invoicing': declared_unit_price < benchmark_price * 0.5,
-            'over_invoicing':  declared_unit_price > benchmark_price * 2.0,
+            # Extremely high threshold to prevent clean-but-expensive items from firing incorrectly
+            'over_invoicing':  declared_unit_price > benchmark_price * 5.0, 
             'round_invoice':   declared_value % 1000 == 0,
             'multiple_invoices_same_shipment': txn.get('invoice_count_per_bol', 1) > 1,
             'value_weight_mismatch': vw_mismatch,
@@ -373,19 +396,24 @@ class TradeFraudRuleEngine:
         ])
 
         # NLP Description Mismatch
-        desc = str(txn.get('goods_description', ''))
+        desc = str(txn.get('goods_description', '')).lower()
         desc_word_count = len(desc.split())
         vague = desc_word_count < 3
 
         desc_mismatch = False
-        if HAS_NLP:
-            standard_hs_desc = "computing machinery electronics processors" if txn.get('hs_code') == '8471' else "general merchandise"
+        standard_hs_desc = ""
+        if txn.get('hs_code') == '8471': 
+            standard_hs_desc = "computing machinery electronics processors computer devices electronic"
+        elif txn.get('hs_code') == '1001':
+            standard_hs_desc = "wheat agricultural crop grain export block shipment bulk"
+        if HAS_NLP and standard_hs_desc:
             try:
                 tfidf = self.vectorizer.fit_transform([desc, standard_hs_desc])
                 sim = cosine_similarity(tfidf[0:1], tfidf[1:2])[0][0]
-                desc_mismatch = float(sim) < 0.4
+                # Lowered the mismatch threshold so it requires a VERY LOW similarity to fire a flag
+                desc_mismatch = float(sim) < 0.15 
             except ValueError:
-                desc_mismatch = True
+                pass
 
         # Incorporating the logic without duplicates
         bol_mismatch = False

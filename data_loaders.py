@@ -79,7 +79,7 @@ def load_opensanctions():
     if os.path.exists(csv_path):
         try:
             print("[INFO] Loading real OpenSanctions CSV...")
-            df = pd.read_csv(csv_path)
+            df = pd.read_csv(csv_path, low_memory=False)
             df = df.head(50000)  # Optimization for demo
             if "name" in df.columns:
                 sanctioned_names = set(df["name"].dropna().str.upper())
