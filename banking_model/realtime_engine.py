@@ -112,8 +112,8 @@ def load_blacklist_datasets():
             print(f"Feodo Load Warning: {e}")
 
     # Load Firehol dataset
-    # Safely handle the double .csv.csv extension if present
-    firehol_path = os.path.join(base_dir, "data", "firehol_level1.csv.csv")
+    # Load FireHOL CIDR blocklist
+    firehol_path = os.path.join(base_dir, "data", "firehol_level1.csv")
     if not os.path.exists(firehol_path):
         firehol_path = os.path.join(base_dir, "data", "firehol_level1.csv")
         
@@ -138,8 +138,8 @@ def load_paysim_graph():
     global PAYSIM_GRAPH, PAYSIM_SENDERS, PAYSIM_RECEIVERS
     base_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Handle double .csv.csv extension
-    paysim_path = os.path.join(base_dir, "data", "paysim.csv.csv")
+    # Load PaySim transaction graph
+    paysim_path = os.path.join(base_dir, "data", "paysim.csv")
     if not os.path.exists(paysim_path):
         paysim_path = os.path.join(base_dir, "data", "paysim.csv")
     
