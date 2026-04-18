@@ -1,90 +1,71 @@
-from rule_engine import TradeFraudRuleEngine
 import json
+import joblib
+import os
+import sys
 
-engine = TradeFraudRuleEngine(api_key=None)
+# 1. Boot up the Trade Docs Rule Engine (Legacy Layer 1)
+from rule_engine import TradeFraudRuleEngine
+rule_engine = TradeFraudRuleEngine(api_key=None)
+
+# 2. Boot up the Graph Network Engine (ML Layer 2)
+sys.path.append(os.path.join(os.path.dirname(__file__), 'banking_model'))
+from realtime_engine import analyze_transaction_core, load_geography_tree, load_blacklist_datasets, load_paysim_graph
+
+# Load Geo Mappings, Blacklists, PaySim Graph, and ML Models
+load_geography_tree()
+load_blacklist_datasets()
+load_paysim_graph()
+_base = os.path.dirname(os.path.abspath(__file__))
+model_dir = os.path.join(_base, "banking_model", "models")
+try:
+    xgb_explainer = joblib.load(os.path.join(model_dir, "banking_shap_explainer.pkl"))
+    ml_features = joblib.load(os.path.join(model_dir, "banking_features.pkl"))
+except:
+    print("Warning: Run `python banking_model/train_banking_model.py` first to generate ML artifacts.")
+    xgb_explainer = None
+    ml_features = []
 
 # ─────────────────────────────────────────────
 # 🧪 1. PERFECTLY CAMOUFLAGED FRAUD
-# (Everything looks normal individually)
+# (Perfect Paperwork → Rule Engine FAILS)
+# (Same IP Used By 20 Cards, from Russia → Graph Engine CATCHES)
 # ─────────────────────────────────────────────
 stealth_fraud = {
+    # --- Trade Paperwork (Perfect) ---
     "hs_code": "8471",
-    "declared_value_usd": 52000,  # very close to real → no price flag
+    "declared_value_usd": 52000,  
     "weight_kg": 1000,
-    "goods_description": "computer processing units industrial grade",  # good description
+    "goods_description": "computer processing units industrial grade",  
     "invoice_count_per_bol": 1,
-    "bol_weight": 1000,
-    "bol_number": "BOL-STEALTH1",
-    "port_arrival_record": True,
-    "letter_of_credit": True,
-    "packing_list": True,
-    "is_duplicate_invoice": False,
-
-    "origin_country": "SG",  # safe country
-    "destination_country": "IN",
-    "transit_port": "",
     "abnormal_route_flag": False,
-    "further_shipment_records": True,
-    "transshipment_count": 0,
-
-    "paid_up_capital": 300000,
-    "iec_age_days": 365,
-    "mca_status": "active",
-    "address_hash": "HASH-STEALTH",
-    "shared_address_flag": True,  # ONLY signal
-    "counterparty_name": "UNKNOWN SYSTEMS PTE LTD",
-    "director_id": "DIR-STEALTH",
-    "related_party_flag": True,   # subtle link
-
-    "txn_count_24hr": 2,
-    "current_month_txn_count": 12,
-    "avg_monthly_txn_count": 10,
-    "days_to_gst_period": 7,
-    "export_txn_spike": False,
-    "suspicious_filing_hour": 14,
-    "repeat_shipment_count_30d": 2,
+    "shared_address_flag": True,  
+    
+    # --- Graph Telemetry (Exposes the Fraudster) ---
+    "ip_address": "185.243.103.246",  # Realistic public IP (Russian proxy)
+    "device_fingerprint": "DEV-SHADOW-1",
+    "card_id": "STEALTH-CARD-XX",
+    "amount_inr": 52000 * 83,  # Converting USD to INR roughly
+    "ip_shared_card_count": 20, # Topological flag: 20 other users share this IP!
+    "degree_centrality": 0.91,
+    "_distinct_ips": 5, # Multi-IP proxy usage
+    "_distinct_countries": 3 # Flown through 3 countries virtually
 }
 
 # ─────────────────────────────────────────────
 # 🧪 2. SPLIT TRANSACTION FRAUD (SMURFING)
-# (Below thresholds intentionally)
+# (Amounts intentionally small to bypass limits)
 # ─────────────────────────────────────────────
 smurfing_fraud = {
     "hs_code": "8471",
     "declared_value_usd": 15000,  # below suspicion threshold
-    "weight_kg": 300,
-    "goods_description": "electronics components",
-    "invoice_count_per_bol": 1,
-    "bol_weight": 300,
-    "bol_number": "BOL-SMURF",
-    "port_arrival_record": True,
-    "letter_of_credit": True,
-    "packing_list": True,
-    "is_duplicate_invoice": False,
-
-    "origin_country": "MY",
-    "destination_country": "IN",
-    "transit_port": "",
-    "abnormal_route_flag": False,
-    "further_shipment_records": True,
-    "transshipment_count": 0,
-
-    "paid_up_capital": 200000,
-    "iec_age_days": 200,
-    "mca_status": "active",
-    "address_hash": "HASH-SMURF",
-    "shared_address_flag": False,
-    "counterparty_name": "LEGIT TECH SDN BHD",
-    "director_id": "DIR-LEGIT",
-    "related_party_flag": False,
-
-    "txn_count_24hr": 1,
-    "current_month_txn_count": 40,  # suspicious volume
-    "avg_monthly_txn_count": 8,     # spike
-    "days_to_gst_period": 2,
+    "current_month_txn_count": 40,  
     "export_txn_spike": True,
-    "suspicious_filing_hour": 11,
-    "repeat_shipment_count_30d": 25,
+    
+    # Graph Engine context
+    "ip_address": "103.45.67.89",  # Realistic public IP (Asian proxy)
+    "card_id": "SMURF-CARD-ZZ",
+    "amount_inr": 15000 * 83,
+    "device_shared_card_count": 5, # The exact same phone used by 5 accounts!
 }
 
 # ─────────────────────────────────────────────
@@ -95,51 +76,115 @@ semantic_attack = {
     "declared_value_usd": 50000,
     "weight_kg": 1000,
     "goods_description": "multi-purpose integrated digital solution hardware units",  
-    # sounds legit but vague
-
-    "invoice_count_per_bol": 1,
-    "bol_weight": 1000,
-    "bol_number": "BOL-NLP",
-    "port_arrival_record": True,
-    "letter_of_credit": True,
-    "packing_list": True,
-    "is_duplicate_invoice": False,
-
-    "origin_country": "US",
-    "destination_country": "IN",
-    "transit_port": "",
-    "abnormal_route_flag": False,
-    "further_shipment_records": True,
-    "transshipment_count": 0,
-
-    "paid_up_capital": 500000,
-    "iec_age_days": 800,
-    "mca_status": "active",
-    "address_hash": "HASH-NLP",
-    "shared_address_flag": False,
-    "counterparty_name": "TECH GLOBAL INC",
-    "director_id": "DIR-NLP",
-    "related_party_flag": False,
-
-    "txn_count_24hr": 1,
-    "current_month_txn_count": 6,
-    "avg_monthly_txn_count": 5,
-    "days_to_gst_period": 15,
-    "export_txn_spike": False,
     "suspicious_filing_hour": 13,
-    "repeat_shipment_count_30d": 1,
+    
+    # Graph Engine context (Caught bypassing KYC)
+    "ip_address": "91.215.40.22",  # Realistic public IP (Eastern Europe proxy)
+    "card_id": "NLP-CARD-WW",
+    "amount_inr": 50000 * 83,
+    "ip_shared_card_count": 8, # Network Topology Red Flag
 }
 
 # ─────────────────────────────────────────────
-# RUN TESTS
+# 🧪 4. BLACKLIST VALIDATION (Known Feodo C2 IP)
+# IP 50.16.16.211 is in ipblocklist.csv (QakBot C2)
+# Must trigger blacklist_hits > 0
 # ─────────────────────────────────────────────
-def run_test(name, txn):
-    print(f"\n{'='*60}")
-    print(f"  TEST CASE: {name}")
-    print(f"{'='*60}")
-    result = engine.evaluate(txn)
-    print(json.dumps(result, indent=2))
+blacklist_test = {
+    "hs_code": "8471",
+    "declared_value_usd": 48000,
+    "weight_kg": 900,
+    "goods_description": "server rack equipment industrial",
+    "invoice_count_per_bol": 1,
+    
+    # Graph Engine context — uses the KNOWN Feodo IP
+    "ip_address": "50.16.16.211",   # Dotted-quad: known QakBot C2 from ipblocklist.csv
+    "device_fingerprint": "DEV-FEODO-TEST",
+    "card_id": "BLACKLIST-CARD-TEST",
+    "amount_inr": 48000 * 83,
+    "ip_shared_card_count": 10,      # Trigger graph flags to reach Layer 2
+    "_distinct_ips": 4,
+    "_distinct_countries": 3
+}
 
-run_test("STEALTH FRAUD", stealth_fraud)
-run_test("SMURFING FRAUD", smurfing_fraud)
-run_test("SEMANTIC ATTACK", semantic_attack)
+# ─────────────────────────────────────────────
+# 🧪 5. FIREHOL CIDR VALIDATION
+# IP 2.57.122.5 falls inside FireHOL CIDR 2.57.122.0/24
+# Must trigger blacklist_hits > 0 via CIDR range matching
+# ─────────────────────────────────────────────
+firehol_test = {
+    "hs_code": "8471",
+    "declared_value_usd": 39000,
+    "weight_kg": 750,
+    "goods_description": "network switching equipment",
+    "invoice_count_per_bol": 1,
+    
+    "ip_address": "2.57.122.5",     # Falls inside FireHOL CIDR 2.57.122.0/24
+    "device_fingerprint": "DEV-FIREHOL-TEST",
+    "card_id": "FIREHOL-CARD-TEST",
+    "amount_inr": 39000 * 83,
+    "ip_shared_card_count": 8,
+    "_distinct_ips": 4,
+    "_distinct_countries": 3
+}
+
+# ─────────────────────────────────────────────
+# 🧪 6. CLEAN IP VALIDATION (Negative Test)
+# IP 8.8.8.8 (Google DNS) must NOT trigger blacklist
+# ─────────────────────────────────────────────
+clean_ip_test = {
+    "hs_code": "8471",
+    "declared_value_usd": 25000,
+    "weight_kg": 500,
+    "goods_description": "standard computing hardware",
+    "invoice_count_per_bol": 1,
+    
+    "ip_address": "8.8.8.8",        # Google DNS — known clean IP
+    "device_fingerprint": "DEV-CLEAN-TEST",
+    "card_id": "CLEAN-CARD-TEST",
+    "amount_inr": 25000 * 83,
+    "ip_shared_card_count": 6,
+    "_distinct_ips": 4,
+    "_distinct_countries": 3
+}
+
+# ─────────────────────────────────────────────
+# RUN DUAL-LAYER TESTS
+# ─────────────────────────────────────────────
+def run_dual_test(name, txn):
+    print(f"\\n{'='*80}")
+    print(f" 🛡️  TEST CASE: {name}")
+    print(f"{'='*80}")
+    
+    print("\\n[LAYER 1: Trade Document Rule Engine]")
+    rule_result = rule_engine.evaluate(txn)
+    rule_score = rule_result.get("risk_score", 0)
+    print(f"  > Risk Score: {rule_score}/100")
+    if rule_score < 70:
+        print("  > ❌ STATUS: PASSED / UNDETECTED (Paperwork looked perfect)")
+    else:
+        print("  > ✅ STATUS: CAUGHT")
+
+    print("\\n[LAYER 2: Banking Graph Network Engine]")
+    if xgb_explainer:
+        is_fraud, explanation_json = analyze_transaction_core(txn, xgb_explainer, ml_features)
+        
+        if is_fraud:
+            print("  > 🚨 STATUS: CRITICAL FRAUD INTERCEPTED!")
+            print("  > 🧠 AI EXPLANATION JSON PAYLOAD:")
+            print(explanation_json)
+        else:
+            print("  > STATUS: CLEAN")
+    else:
+        print("  > Skipping ML Layer (Artifacts missing)")
+
+if __name__ == "__main__":
+    run_dual_test("STEALTH FRAUD (Camouflaged Money Mule)", stealth_fraud)
+    run_dual_test("SMURFING FRAUD (Burst Velocity)", smurfing_fraud)
+    run_dual_test("SEMANTIC ATTACK (Invoice NLP Evasion)", semantic_attack)
+    print("\\n" + "█"*80)
+    print(" 🔍  BLACKLIST VALIDATION SUITE")
+    print("█"*80)
+    run_dual_test("FEODO HIT (Known QakBot C2 IP)", blacklist_test)
+    run_dual_test("FIREHOL HIT (CIDR Range Match)", firehol_test)
+    run_dual_test("CLEAN IP (Must NOT Trigger Blacklist)", clean_ip_test)

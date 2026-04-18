@@ -7,3 +7,6 @@ scikit-learn
 joblib
 lxml
 faker
+shap
+imbalanced-learn
+networkx

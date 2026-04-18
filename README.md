@@ -1,86 +1,71 @@
-how to run
+# Banking Fraud Graph Detection Pipeline
 
-# 1. Clone
+This project is a multi-layered, hybrid Fraud Detection System. It incorporates deterministic rules engines, an XGBoost Machine Learning classifier, and NetworkX Topographical Graph modeling to detect advanced financial crimes (like Money Mules, Semantic Evasion, and Smurfing).
+
+## 🚀 How to Run the Test Suites
+
+**1. Run Rule-Based Testing (Determinism & ML Basics)**
+```bash
+python test_edge_case.py
+```
+*This validates your rule engine layers to ensure basic thresholds (e.g., impossible geography, NLP mismatches, high-value spikes) fire correctly.*
+
+**2. Run Advanced Graph & Network Testing (Adversarial Simulation)**
+```bash
+python test_adversarial_cases.py
+```
+*This is the core graph testing suite. It validates your real-time integration with the PaySim graph, FireHOL/Feodo blacklists, and dynamic XGBoost scoring JSON payloads against stealth attacks.*
+
+---
+
+## 🛠️ Setup & Installation
+
+**1. Clone the Repository**
+```bash
 git clone https://github.com/Ram-Pratheesh/Fraud-Detection.git
 cd Fraud-Detection
+```
 
-# 2. Install dependencies (no requirements.txt, so install manually)
-python -m pip install -r requirements.txt
-
-# 3. (Optional) Scrape real MSME seed data
-python scrape_msme.py
-
-# 4. Generate synthetic transactions
-python generate_data.py
-# → creates output/transactions_flagged.csv
-
-# 5. Engineer features
-python feature_engineering.py
-# → creates output/features.csv
-
-# 6. Train the model
-python train_model.py
-# → saves models/fraud_model.pkl, models/feature_list.pkl, models/threshold.pkl
-
-# 7. Run predictions on new data
-python predict.py --input output/transactions_flagged.csv
-# → creates output/predictions.csv and output/high_risk_transactions.csv
-
-
-## 📂 Project Architecture Overview
-
-This project is a multi-layered, hybrid Fraud Detection System. It doesn't rely solely on one method. Instead, it uses three layers of defense:
-1. **Data Gathering & Simulation:** Scraping real entities and synthetically generating transactions to mimic real-world financial data.
-2. **Deterministic Rules Engine:** Hardcoded bounds (e.g., "if price > 2x average, flag it").
-3. **Machine Learning:** An XGBoost model that finds hidden complex patterns the rules miss, with a hybrid final aggregation.
+**2. Install Dependencies**
+Ensure you have the latest packages installed.
+```bash
+pip install -r requirment.txt
+```
 
 ---
 
-## 📄 File-by-File Breakdown
+## 📄 File-by-File Technical Breakdown
 
-### 1. `scrape_msme.py`
-*   **What it does:** A web scraper built with `requests` and `BeautifulSoup`.
-*   **How it works:** It connects to the Tamil Nadu MSME portal specifically targeting their Corona Safe Units list. It extracts tables of real, verified registered businesses. 
-*   **Why we need it:** ML models trained on 100% synthetic data fail in the real world. By seeding our data generator with real company names, locations, and districts, the simulated transactions closely model real Indian trade routes.
-*   **Output:** Creates `real_msme_seed.csv`.
+### Core Modules (The Graph & Network Layer)
 
-### 2. `generate_data.py`
-*   **What it does:** The massive engine that generates the synthetic transactions, acting as our raw data source.
-*   **How it works:** 
-    *   It generates realistic Indian MSME identities (using the seed file if available).
-    *   It simulates International Trade Transactions utilizing real HS Codes (e.g., 8471 for computers) and benchmarks UN Comtrade prices.
-    *   **The Injection of Fraud:** Crucially, it mathematically injects specific fraud typologies into the data—like *under/over-invoicing*, *ghost shipments* (zero weight), *duplicate invoices*, and *vague descriptions*.
-    *   **The Rule Engine Layer:** It contains a `flag_transaction` function that calculates a `risk_score` by checking hard limits (e.g. is the country on the FATF greylist? Are they filing between 2-4 AM?).
-*   **Output:** Creates `output/transactions_flagged.csv`.
+#### `banking_model/realtime_engine.py`
+*   **What it does:** The primary streaming engine that mimics real-time transaction ingestion.
+*   **How it works:** It loads massive global datastores into memory at startup. When a transaction fires, the engine uses **NetworkX** to find real 2-hop topological connections (Money Mule tracking) and verifies the IPs against threat intelligence.
+*   **Why we need it:** To simulate latency-sensitive production environments where multiple components evaluate simultaneous rules asynchronously.
 
-### 3. `rule_engine_demo.py`
-*   **What it does:** A lightweight script used to demonstrate the baseline deterministic rule engine.
-*   **Why we need it:** Showcases the foundational layer of fraud detection. Deterministic rules are fast and easily explainable (which auditors love), catching the absolute most obvious frauds before heavy Machine Learning gets involved.
+#### `banking_model/explainer.py`
+*   **What it does:** Generates fully transparent, human-readable JSON payloads explaining *why* a transaction was flagged.
+*   **How it works:** Executes a `TreeExplainer` (SHAP) over the mathematical XGBoost output to identify the top driving log-odds variations, combined with pure logic from the `realtime_engine`.
 
-### 4. `feature_engineering.py`
-*   **What it does:** Transforms raw CSV columns into dense mathematical signals formatted for XGBoost. 
-*   **How it works:** It engineers complex meta-features from the baseline data:
-    *   *Frequency counting:* Tracking how often specific IECs (Importer/Exporter Codes) appear.
-    *   *Temporal tracking:* Converting raw timestamps into boolean "is_night_transaction" flags.
-    *   *Text parsing:* Measuring the word count of `goods_description` and flagging "vague" filler words (e.g., "misc", "assorted").
-*   **Output:** Creates the final clean dataset `output/features.csv`, perfectly formatted for training.
+#### `banking_model/train_banking_model.py`
+*   **What it does:** Trains the core XGBoost Classifier. 
+*   **How it works:** Integrates `SMOTE` (imbalanced-learn) to oversample genuine fraud classes before building an ensemble tree model optimized for extreme Recall logic.
 
-### 5. `train_model.py`
-*   **What it does:** The most critical file. This trains the `XGBClassifier` and optimizes it specifically for high fraud *Recall*.
-*   **Key Technical Implementations (MEMORIZE THESE):**
-    *   **Class Imbalance Handling:** Uses `scale_pos_weight` (automatically calculated as Normal_Count / Fraud_Count * 1.5). This artificially inflates the penalty for missing a fraudulent transaction, forcing the model to care more about the minority class.
-    *   **Predict Proba vs Predict:** Instead of the default `.predict()` which cuts off at a strict 0.5 probability, we use `.predict_proba()` and manually tune the threshold down to `0.35` for the hackathon. This catches vastly more fraud (High Recall) at the slight expense of false positives.
-    *   **The Hybrid Score:** We integrate the ML model and the Rule Engine into a final equation: `Final_Score = (0.7 * ML_Probability) + (0.3 * Rule_Score)`. This gives the best of both worlds.
-    *   **Cross-Validation:** Uses 5-fold cross-validation to prove to the judges that the model doesn't overfit and is mathematically stable.
-*   **Output:** Serializes and saves the model rules into `models/fraud_model.pkl`, `models/feature_list.pkl`, and `models/threshold.pkl`.
+#### `banking_model/graph_features.py`
+*   **What it does:** The baseline network pre-processor used to statically extract edge counts (degrees of centrality, distinct paths) from historic CSVs.
 
-### 6. `predict.py`
-*   **What it does:** Your Hackathon "Showcase" script. It proves the pipeline works in "production" by inferencing new, unseen CSV files.
-*   **How it works:**
-    *   Accepts a raw CSV provided by the judges via command line arg.
-    *   **Missing Data Resilience:** If judges withhold a feature column, this script detects the mismatch and gracefully fills it with `0` rather than fatally crashing.
-    *   **Human-Readable Output:** Bins mathematical output into business-friendly terms: "LOW", "MEDIUM", "HIGH", "VERY HIGH", and "CRITICAL" risk buckets.
-*   **Output:** Creates `output/predictions.csv` (the full batch) and `output/high_risk_transactions.csv` (a filtered list for investigators to review).
+### Testing & Validation
 
----
+#### `test_adversarial_cases.py`
+*   **What it does:** The absolute proving ground. Evaluates your system architecture against highly-coordinated attacks like Stealth Mules and Smurfing, explicitly reporting the dynamic JSON payload and verifying if the final score catches it.
 
+#### `test_edge_case.py`
+*   **What it does:** Unit tests for raw functional logic in trade finance scenarios.
+
+### Datasets Utilized (`banking_model/data/`)
+*   **`paysim.csv`**: Massive topological dataset simulating mobile money networks. Used to map real sender-to-receiver edges and compute hop counts.
+*   **`ipblocklist.csv` (abuse.ch Feodo Tracker)**: Used for high-fidelity exact-match IP threat intelligence (Botnet C2 tracking).
+*   **`firehol_level1.csv`**: Extensive CIDR blocklist mapping entire subnets notoriously associated with malware.
+*   **`IpAddress_to_Country.csv`**: Provides the foundational mapping allowing dynamic geo-anomaly scoring.
+
+*(Other legacy simulation scripts like `generate_data.py`, `feature_engineering.py`, and `predict.py` provide trade-finance foundation components)*
