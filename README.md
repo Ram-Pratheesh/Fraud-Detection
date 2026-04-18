@@ -1,3 +1,5 @@
+paysim.csv is not included due to size limits.
+Download from whatsapp and place it in: banking_model/data/
 # Banking Fraud Graph Detection Pipeline
 
 This project is a multi-layered, hybrid Fraud Detection System. It incorporates deterministic rules engines, an XGBoost Machine Learning classifier, and NetworkX Topographical Graph modeling to detect advanced financial crimes (like Money Mules, Semantic Evasion, and Smurfing).
